@@ -308,12 +308,12 @@ int SD_PlayIt ( int sndnum, int angle, int distance, int pitch )
     if ( *snd == 'C' )
     {
         voice = FX_PlayVOC3D( (char*)snd, pitch, angle, distance,
-                              sounds[sndnum].priority, (unsigned long) sndnum );
+                              sounds[sndnum].priority, (unsigned long) sndnum, W_LumpLength(SoundNumber(sndnum)) );
     }
     else
     {
         voice = FX_PlayWAV3D( (char*)snd, pitch, angle, distance,
-                              sounds[sndnum].priority, (unsigned long) sndnum );
+                              sounds[sndnum].priority, (unsigned long) sndnum, W_LumpLength(SoundNumber(sndnum)) );
     }
 
     if ( voice < FX_Ok )

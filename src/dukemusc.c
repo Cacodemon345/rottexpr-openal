@@ -167,6 +167,7 @@ static Mix_Music *music_musicchunk = NULL;
 
 int MUSIC_Init(int SoundCard, int Address)
 {
+#if 0
     init_debugging();
 
     musdebug("INIT! card=>%d, address=>%d...", SoundCard, Address);
@@ -186,6 +187,8 @@ int MUSIC_Init(int SoundCard, int Address)
 
     music_initialized = 1;
     return(MUSIC_Ok);
+#endif
+    return MUSIC_Error;
 } // MUSIC_Init
 
 
@@ -216,7 +219,7 @@ void MUSIC_SetMaxFMMidiChannel(int channel)
 
 void MUSIC_SetVolume(int volume)
 {
-    Mix_VolumeMusic(volume >> 1);  // convert 0-255 to 0-128.
+    //Mix_VolumeMusic(volume >> 1);  // convert 0-255 to 0-128.
 } // MUSIC_SetVolume
 
 
@@ -234,7 +237,7 @@ void MUSIC_ResetMidiChannelVolumes(void)
 
 int MUSIC_GetVolume(void)
 {
-    return(Mix_VolumeMusic(-1) << 1);  // convert 0-128 to 0-255.
+    //return(Mix_VolumeMusic(-1) << 1);  // convert 0-128 to 0-255.
 } // MUSIC_GetVolume
 
 
@@ -246,27 +249,31 @@ void MUSIC_SetLoopFlag(int loopflag)
 
 int MUSIC_SongPlaying(void)
 {
-    return((Mix_PlayingMusic()) ? __FX_TRUE : __FX_FALSE);
+    //return((Mix_PlayingMusic()) ? __FX_TRUE : __FX_FALSE);
+    return __FX_FALSE;
 } // MUSIC_SongPlaying
 
 
 void MUSIC_Continue(void)
 {
+#if 0
     if (Mix_PausedMusic())
         Mix_ResumeMusic();
     else if (music_songdata)
         MUSIC_PlaySong(music_songdata, MUSIC_PlayOnce);
+#endif
 } // MUSIC_Continue
 
 
 void MUSIC_Pause(void)
 {
-    Mix_PauseMusic();
+    //Mix_PauseMusic();
 } // MUSIC_Pause
 
 
 int MUSIC_StopSong(void)
 {
+#if 0
     //if (!fx_initialized)
     if (!Mix_QuerySpec(NULL, NULL, NULL))
     {
@@ -282,6 +289,7 @@ int MUSIC_StopSong(void)
 
     music_songdata = NULL;
     music_musicchunk = NULL;
+#endif
     return(MUSIC_Ok);
 } // MUSIC_StopSong
 
@@ -316,73 +324,11 @@ int MUSIC_PlaySong(char *song, int loopflag)
 
 extern char ApogeePath[256];
 
-#ifdef DUKE3D
-// Duke3D-specific.  --ryan.
-void PlayMusic(char *_filename)
-{
-    //char filename[MAX_PATH];
-    //strcpy(filename, _filename);
-    //FixFilePath(filename);
-
-    char filename[MAX_PATH];
-    long handle;
-    long size;
-    void *song;
-    long rc;
-
-    MUSIC_StopSong();
-
-    // Read from a groupfile, write it to disk so SDL_mixer can read it.
-    //   Lame.  --ryan.
-    handle = kopen4load(_filename, 0);
-    if (handle == -1)
-        return;
-
-    size = kfilelength(handle);
-    if (size == -1)
-    {
-        kclose(handle);
-        return;
-    } // if
-
-    song = malloc(size);
-    if (song == NULL)
-    {
-        kclose(handle);
-        return;
-    } // if
-
-    rc = kread(handle, song, size);
-    kclose(handle);
-    if (rc != size)
-    {
-        free(song);
-        return;
-    } // if
-
-    // save the file somewhere, so SDL_mixer can load it
-    GetPathFromEnvironment(filename, MAX_PATH, "tmpsong.mid");
-    handle = SafeOpenWrite(filename, filetype_binary);
-
-    SafeWrite(handle, song, size);
-    close(handle);
-    free(song);
-
-    //music_songdata = song;
-
-    music_musicchunk = Mix_LoadMUS(filename);
-    if (music_musicchunk != NULL)
-    {
-        // !!! FIXME: I set the music to loop. Hope that's okay. --ryan.
-        Mix_PlayMusic(music_musicchunk, -1);
-    } // if
-}
-#endif
-
 #ifdef ROTT
 // ROTT Special - SBF
 int MUSIC_PlaySongROTT(char *song, int size, int loopflag)
 {
+#if 0
     char filename[MAX_PATH];
     int handle;
 
@@ -404,8 +350,8 @@ int MUSIC_PlaySongROTT(char *song, int size, int loopflag)
     }
 
     Mix_PlayMusic(music_musicchunk, (loopflag == MUSIC_PlayOnce) ? 0 : -1);
-
-    return(MUSIC_Ok);
+#endif
+    return(MUSIC_Error);
 } // MUSIC_PlaySongROTT
 #endif
 
@@ -455,14 +401,15 @@ void MUSIC_GetSongLength(songposition *pos)
 
 int MUSIC_FadeVolume(int tovolume, int milliseconds)
 {
-    Mix_FadeOutMusic(milliseconds);
-    return(MUSIC_Ok);
+    //Mix_FadeOutMusic(milliseconds);
+    return(MUSIC_Error);
 } // MUSIC_FadeVolume
 
 
 int MUSIC_FadeActive(void)
 {
-    return((Mix_FadingMusic() == MIX_FADING_OUT) ? __FX_TRUE : __FX_FALSE);
+    //return((Mix_FadingMusic() == MIX_FADING_OUT) ? __FX_TRUE : __FX_FALSE);
+    return __FX_FALSE;
 } // MUSIC_FadeActive
 
 
