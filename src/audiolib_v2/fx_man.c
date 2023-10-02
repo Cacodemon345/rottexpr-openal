@@ -541,6 +541,8 @@ int FX_PlayVOC3D( char *ptr, int pitchoffset, int angle, int distance,
 
     alSourcei(source[sourceNum], AL_BUFFER, 0);
     alBufferData(Buffers[sourceNum], AL_FORMAT_MONO16 + (info.channels == 2 ? 2 : 0), framedata, info.frames * info.channels * sizeof(short), info.samplerate);
+    free(framedata);
+    sf_close(sndfile);
 
     angle &= 31;
 
