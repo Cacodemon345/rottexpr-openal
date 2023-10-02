@@ -89,6 +89,8 @@ boolean autoAim = 1;
 boolean enableExtraPistolDrops = 0;
 boolean allowMovementWithMouseYAxis = 1;
 boolean enableZomROTT = 0;
+boolean reverbMusic = 1;
+boolean chorusMusic = 1;
 int FocalWidthOffset = 0;
 int ScreenHeightToWriteToCfg = 0;
 int HudScaleToWriteToCfg = 0;
@@ -421,6 +423,12 @@ boolean ParseConfigFile (void)
 
     if (version == ROTTVERSION)
     {
+        //Read in Reverb
+        ReadBoolean("ReverbMusic", &reverbMusic);
+
+        //Read in Chorus
+        ReadBoolean("ChorusMusic", &chorusMusic);
+
         //Read in allowBlitzguardMoreMissileWeps
         ReadBoolean("AllowBlitzguardMoreMissileWeps", &allowBlitzMoreMissileWeps);
 
@@ -1585,6 +1593,20 @@ void WriteConfig (void)
     // Write out Version
 
     WriteParameter(file,"Version          ",ROTTVERSION);
+
+    // Write out Reverb
+
+    SafeWriteString(file,"\n;\n");
+    SafeWriteString(file, "; 1 - Reverb enabled\n");
+    SafeWriteString(file, "; 0 - Reverb disabled\n");
+    WriteParameter(file, "ReverbMusic    ", reverbMusic);
+
+    // Write out Chorus
+
+    SafeWriteString(file,"\n;\n");
+    SafeWriteString(file, "; 1 - Chorus enabled\n");
+    SafeWriteString(file, "; 0 - Chorus disabled\n");
+    WriteParameter(file, "ChorusMusic    ", chorusMusic);
 
     //Write out AllowBlitzguardMoreMissileWeps
 

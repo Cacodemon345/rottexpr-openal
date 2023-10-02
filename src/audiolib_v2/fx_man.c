@@ -555,7 +555,7 @@ int FX_PlayVOC3D( char *ptr, int pitchoffset, int angle, int distance,
     callbackvals[sourceNum] = callbackval;
     alSourcePlay(source[sourceNum]);
     
-    return FX_Ok;
+    return source[sourceNum];
 }
 
 int FX_PlayWAV3D( char *ptr, int pitchoffset, int angle, int distance,

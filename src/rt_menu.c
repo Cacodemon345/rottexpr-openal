@@ -740,7 +740,9 @@ CP_MenuNames ExtOptionsNames[] =
     "CROSS HAIR",
     "JUMPING",
     "AUTOAIM MISSILE WEPS",
-    "ENABLE AUTOAIM"
+    "ENABLE AUTOAIM",
+    "MUSIC REVERB",
+    "MUSIC CHORUS"
 };
 
 CP_MenuNames ExtGameOptionsNames[] =
@@ -811,7 +813,7 @@ CP_iteminfo VisualOptionsItems = { 20, MENU_Y, 4, 0, 43, VisualOptionsNames, mn_
 
 CP_iteminfo ScreenResolutionItems; // This gets filled in at run time
 
-CP_iteminfo ExtOptionsItems = { 20, MENU_Y, 7, 0, 43, ExtOptionsNames, mn_largefont };
+CP_iteminfo ExtOptionsItems = { 20, MENU_Y, 9, 0, 43, ExtOptionsNames, mn_largefont };
 
 CP_iteminfo ExtGameOptionsItems = { 20, MENU_Y, 4, 0, 43, ExtGameOptionsNames, mn_largefont }; //LT added
 
@@ -839,6 +841,8 @@ CP_itemtype ExtOptionsMenu[] =
     {1, "", 'J', NULL},
     {1, "", 'A', NULL},
     {1, "", 'U', NULL},
+    {1, "", 'R', NULL},
+    {1, "", 'C', NULL},
 };
 
 CP_itemtype ExtGameMenu[] =
@@ -5532,14 +5536,16 @@ void DrawExtOptionsMenu (void)
     FlipMenuBuf();
 }
 
-static char * ExtOptionsDesc[7] = {
+static char * ExtOptionsDesc[9] = {
     "Allow mouse look.",
     "Invert the mouse.",
     "Move forward and backward using mouse.",
     "Enable Crosshairs.",
     "Allow Jumping (may completely break levels)",
     "Missile weapons are auto aimed after 1st shot.",
-    "Allow auto aim."
+    "Allow auto aim.",
+    "Enable FluidSynth reverb.",
+    "Enable FluidSynth chorus."
 };
 
 void DrawExtOptionDescription (int w)
@@ -5619,6 +5625,16 @@ void CP_ExtOptionsMenu (void)
             autoAim ^= 1;
             DrawExtOptionsButtons();
             break;
+        case 7:
+            reverbMusic ^=1;
+            MUSIC_UpdateReverbChorus();
+            DrawExtOptionsButtons();
+            break;
+        case 8:
+            chorusMusic ^=1;
+            MUSIC_UpdateReverbChorus();
+            DrawExtOptionsButtons();
+            break;
         }
 
     } while (which >= 0);
@@ -5667,6 +5683,12 @@ void DrawExtOptionsButtons (void)
                 break;
             case 6:
                 if (autoAim == 1) on = 1;
+                break;
+            case 7:
+                if (reverbMusic == 1) on = 1;
+                break;
+            case 8:
+                if (chorusMusic == 1) on = 1;
                 break;
             }
 

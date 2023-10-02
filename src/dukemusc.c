@@ -205,6 +205,7 @@ int MUSIC_Init(int SoundCard, int Address)
 
     settings = new_fluid_settings();
     if (!settings) return MUSIC_Error;
+
     synth = new_fluid_synth(settings);
 
     if (!synth) {
@@ -212,6 +213,9 @@ int MUSIC_Init(int SoundCard, int Address)
         delete_fluid_settings(settings);
         return MUSIC_Error;
     }
+
+    fluid_synth_reverb_on(synth, -1, reverbMusic);
+    fluid_synth_chorus_on(synth, -1, chorusMusic);
 
     int res = fluid_synth_sfload(synth, "./soundfont.sf2", 1);
     if (res == FLUID_FAILED)
@@ -475,5 +479,10 @@ void MUSIC_RegisterTimbreBank(unsigned char *timbres)
     musdebug("STUB ... MUSIC_RegisterTimbreBank().\n");
 } // MUSIC_RegisterTimbreBank
 
+void MUSIC_UpdateReverbChorus( void )
+{
+    fluid_synth_reverb_on(synth, -1, reverbMusic);
+    fluid_synth_chorus_on(synth, -1, chorusMusic);
+}
 
 // end of fx_man.c ...

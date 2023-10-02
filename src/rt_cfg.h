@@ -39,6 +39,8 @@ extern boolean mouseenabled;
 extern boolean joystickenabled;
 extern boolean joypadenabled;
 extern boolean allowBlitzMoreMissileWeps;
+extern boolean reverbMusic;
+extern boolean chorusMusic;
 extern boolean enableAmmoPickups;
 extern boolean autoAimMissileWeps;
 extern boolean autoAim;
