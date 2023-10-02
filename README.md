@@ -9,7 +9,7 @@ This fork of [rottexpr](https://github.com/LTCHIPS/rottexpr) adds OpenAL support
 
 ## Current limitations/bugs
 
-1. Music playback not implemented yet.
+1. Only MIDI music playback is implemented.
 2. Sound playback may be rough around the edges.
 3. Windows support isn't tested.
 4. Sound reverb isn't implemented (affects Shroom Mode).
