@@ -1,5 +1,7 @@
 add_subdirectory(audiolib_v2)
 
+find_package(FluidSynth REQUIRED)
+
 add_executable(rottexpr cin_actr.c
 cin_efct.c
 cin_evnt.c
@@ -53,4 +55,4 @@ HashTable.c)
 
 target_compile_definitions(rottexpr PRIVATE -DSHAREWARE=0 -DSITELICENSE=0 -DSUPERROTT=0 -DUSE_SDL=1 -DPLATFORM_UNIX=1)
 find_package(SDL2 REQUIRED)
-target_link_libraries(rottexpr PRIVATE SDL2::SDL2 audiolib)
+target_link_libraries(rottexpr PRIVATE SDL2::SDL2 FluidSynth::libfluidsynth audiolib)

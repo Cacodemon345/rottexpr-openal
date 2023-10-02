@@ -12,12 +12,14 @@
 #include <string.h>
 #include <assert.h>
 
-#define ROTT
+#include <fluidsynth.h>
 
-#ifdef DUKE3D
-#include "duke3d.h"
-#include "buildengine/cache1d.h"
-#endif
+#define AL_ALEXT_PROTOTYPES 1
+#include <AL/al.h>
+#include <AL/alc.h>
+#include <AL/alext.h>
+
+#define ROTT
 
 #define cdecl
 
@@ -49,6 +51,19 @@ static char warningMessage[80];
 static char errorMessage[80];
 static FILE *debug_file = NULL;
 static int initialized_debugging = 0;
+
+// FluidSynth stuff.
+static fluid_settings_t* settings;
+static fluid_synth_t* synth;
+static fluid_player_t* player;
+static fluid_audio_driver_t* audiodrv;
+static ALuint buffer, source;
+
+ALsizei AL_APIENTRY audio_buffer_callback(ALvoid *userptr, ALvoid *sampledata, ALsizei numbytes)
+{
+    fluid_synth_write_s16(synth, numbytes / 2, sampledata, 0, 2, sampledata, 1, 2);
+    return numbytes;
+}
 
 // This gets called all over the place for information and debugging messages.
 //  If the user set the DUKESND_DEBUG environment variable, the messages
@@ -163,11 +178,11 @@ static int music_initialized = 0;
 static int music_context = 0;
 static int music_loopflag = MUSIC_PlayOnce;
 static char *music_songdata = NULL;
+static int music_size = 0;
 static Mix_Music *music_musicchunk = NULL;
 
 int MUSIC_Init(int SoundCard, int Address)
 {
-#if 0
     init_debugging();
 
     musdebug("INIT! card=>%d, address=>%d...", SoundCard, Address);
@@ -185,10 +200,27 @@ int MUSIC_Init(int SoundCard, int Address)
         return(MUSIC_Error);
     } // if
 
+    alGenSources(1, &source);
+    alGenBuffers(1, &buffer);
+
+    settings = new_fluid_settings();
+    if (!settings) return MUSIC_Error;
+    synth = new_fluid_synth(settings);
+
+    if (!synth) {
+        fprintf(stderr, "Failed to load synth\n");
+        delete_fluid_settings(settings);
+        return MUSIC_Error;
+    }
+
+    int res = fluid_synth_sfload(synth, "./soundfont.sf2", 1);
+    if (res == FLUID_FAILED)
+    {
+        fprintf(stderr, "Failed to load soundfont\n");
+    }
+
     music_initialized = 1;
     return(MUSIC_Ok);
-#endif
-    return MUSIC_Error;
 } // MUSIC_Init
 
 
@@ -206,6 +238,12 @@ int MUSIC_Shutdown(void)
     music_context = 0;
     music_initialized = 0;
     music_loopflag = MUSIC_PlayOnce;
+    delete_fluid_synth(synth);
+    delete_fluid_settings(settings);
+    synth = NULL;
+    settings = NULL;
+    alDeleteBuffers(1, &buffer);
+    alDeleteSources(1, &source);
 
     return(MUSIC_Ok);
 } // MUSIC_Shutdown
@@ -219,6 +257,7 @@ void MUSIC_SetMaxFMMidiChannel(int channel)
 
 void MUSIC_SetVolume(int volume)
 {
+    fluid_synth_set_gain(synth, (float)volume / 255.f);
     //Mix_VolumeMusic(volume >> 1);  // convert 0-255 to 0-128.
 } // MUSIC_SetVolume
 
@@ -237,6 +276,7 @@ void MUSIC_ResetMidiChannelVolumes(void)
 
 int MUSIC_GetVolume(void)
 {
+    return fluid_synth_get_gain(synth) * 255.f;
     //return(Mix_VolumeMusic(-1) << 1);  // convert 0-128 to 0-255.
 } // MUSIC_GetVolume
 
@@ -249,16 +289,15 @@ void MUSIC_SetLoopFlag(int loopflag)
 
 int MUSIC_SongPlaying(void)
 {
-    //return((Mix_PlayingMusic()) ? __FX_TRUE : __FX_FALSE);
-    return __FX_FALSE;
+    return((fluid_player_get_status(player) == FLUID_PLAYER_PLAYING) ? __FX_TRUE : __FX_FALSE);
 } // MUSIC_SongPlaying
 
 
 void MUSIC_Continue(void)
 {
-#if 0
-    if (Mix_PausedMusic())
-        Mix_ResumeMusic();
+#if 1
+    if (player && (fluid_player_get_status(player) == FLUID_PLAYER_DONE || fluid_player_get_status(player) == FLUID_PLAYER_READY))
+        fluid_player_play(player);
     else if (music_songdata)
         MUSIC_PlaySong(music_songdata, MUSIC_PlayOnce);
 #endif
@@ -267,7 +306,7 @@ void MUSIC_Continue(void)
 
 void MUSIC_Pause(void)
 {
-    //Mix_PauseMusic();
+    fluid_player_stop(player);
 } // MUSIC_Pause
 
 
@@ -290,33 +329,43 @@ int MUSIC_StopSong(void)
     music_songdata = NULL;
     music_musicchunk = NULL;
 #endif
+    if (player)
+    {
+        fluid_player_stop(player);
+        fluid_player_seek(player, 0);
+
+        // Detach and stop everything before deleting it.
+        alSourceStop(source);
+        alSourcei(source, AL_BUFFER, 0);
+        delete_fluid_audio_driver(audiodrv);
+        delete_fluid_player(player);
+        fluid_synth_system_reset(synth);
+        player = NULL;
+    }
     return(MUSIC_Ok);
 } // MUSIC_StopSong
 
 
 int MUSIC_PlaySong(char *song, int loopflag)
 {
+    double samplerate = 44100;
     //SDL_RWops *rw;
 
     MUSIC_StopSong();
 
     music_songdata = song;
+    music_loopflag = loopflag;
 
-    // !!! FIXME: This could be a problem...SDL/SDL_mixer wants a RWops, which
-    // !!! FIXME:  is an i/o abstraction. Since we already have the MIDI data
-    // !!! FIXME:  in memory, we fake it with a memory-based RWops. None of
-    // !!! FIXME:  this is a problem, except the RWops wants to know how big
-    // !!! FIXME:  its memory block is (so it can do things like seek on an
-    // !!! FIXME:  offset from the end of the block), and since we don't have
-    // !!! FIXME:  this information, we have to give it SOMETHING.
+    player = new_fluid_player(synth);
+    audiodrv = new_fluid_audio_driver(settings, synth);
 
-    /* !!! ARGH! There's no LoadMUS_RW  ?!
-    rw = SDL_RWFromMem((void *) song, (10 * 1024) * 1024);  // yikes.
-    music_musicchunk = Mix_LoadMUS_RW(rw);
-    Mix_PlayMusic(music_musicchunk, (loopflag == MUSIC_PlayOnce) ? 0 : -1);
-    */
-
-    musdebug("Need to use PlaySongROTT.  :(");
+    fluid_player_set_loop(player, (loopflag == MUSIC_PlayOnce) ? 0 : -1);
+    fluid_player_add_mem(player, song, music_size);
+    fluid_settings_getnum(fluid_synth_get_settings(synth), "synth.sample-rate", &samplerate);
+    //alSourcei(source, AL_BUFFER, buffer);
+    //alBufferCallbackSOFT(buffer, AL_FORMAT_STEREO16, samplerate, audio_buffer_callback, NULL);
+    //alSourcePlay(source);
+    fluid_player_play(player);
 
     return(MUSIC_Ok);
 } // MUSIC_PlaySong
@@ -328,30 +377,25 @@ extern char ApogeePath[256];
 // ROTT Special - SBF
 int MUSIC_PlaySongROTT(char *song, int size, int loopflag)
 {
-#if 0
-    char filename[MAX_PATH];
-    int handle;
-
+    double samplerate = 44100;
     MUSIC_StopSong();
 
-    // save the file somewhere, so SDL_mixer can load it
-    GetPathFromEnvironment(filename, ApogeePath, "tmpsong.mid");
-    handle = SafeOpenWrite(filename);
-
-    SafeWrite(handle, song, size);
-    close(handle);
+    player = new_fluid_player(synth);
+    audiodrv = new_fluid_audio_driver(settings, synth);
 
     music_songdata = song;
+    music_size = size;
+    music_loopflag = loopflag;
 
-    // finally, we can load it with SDL_mixer
-    music_musicchunk = Mix_LoadMUS(filename);
-    if (music_musicchunk == NULL) {
-        return MUSIC_Error;
-    }
+    fluid_player_set_loop(player, (loopflag == MUSIC_PlayOnce) ? 0 : -1);
+    fluid_player_add_mem(player, song, music_size);
+    fluid_settings_getnum(fluid_synth_get_settings(synth), "synth.sample-rate", &samplerate);
+    //alSourcei(source, AL_BUFFER, buffer);
+    //alBufferCallbackSOFT(buffer, AL_FORMAT_STEREO16, samplerate, audio_buffer_callback, NULL);
+    fluid_player_play(player);
+    //alSourcePlay(source);
 
-    Mix_PlayMusic(music_musicchunk, (loopflag == MUSIC_PlayOnce) ? 0 : -1);
-#endif
-    return(MUSIC_Error);
+    return(MUSIC_Ok);
 } // MUSIC_PlaySongROTT
 #endif
 
@@ -402,7 +446,8 @@ void MUSIC_GetSongLength(songposition *pos)
 int MUSIC_FadeVolume(int tovolume, int milliseconds)
 {
     //Mix_FadeOutMusic(milliseconds);
-    return(MUSIC_Error);
+    fluid_player_stop(player);
+    return(MUSIC_Ok);
 } // MUSIC_FadeVolume
 
 
