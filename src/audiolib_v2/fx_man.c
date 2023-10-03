@@ -187,7 +187,17 @@ int FX_SoundsPlaying( void )
 
 int FX_StopSound( int handle )
 {
+    int i = 0;
     alSourceStop(handle);
+
+    for (i = 0; i < voicenum; i++)
+    {
+        if (source[i] == handle && callbackvals[i] != -1)
+        {
+            fx_callback(callbackvals[i]);
+            callbackvals[i] = -1;
+        }
+    }
 }
 
 int FX_StopAllSounds( void )
@@ -551,6 +561,7 @@ int FX_PlayVOC3D( char *ptr, int pitchoffset, int angle, int distance,
     alSource3f(source[sourceNum], AL_DIRECTION, 0, 0, 0);
     alSourcef(source[sourceNum], AL_SOURCE_RELATIVE, AL_TRUE);
     alSourcei(source[sourceNum], AL_BUFFER, Buffers[sourceNum]);
+    alSourcedSOFT(source[sourceNum], AL_PITCH, FixedToFloat(PITCH_GetScale(pitchoffset)));
     
     callbackvals[sourceNum] = callbackval;
     alSourcePlay(source[sourceNum]);
