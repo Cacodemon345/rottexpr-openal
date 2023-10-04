@@ -6,11 +6,11 @@ extern "C"
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
-#include <sndfile.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 #include <zmusic.h>
 
 #include <vector>

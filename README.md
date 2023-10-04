@@ -9,11 +9,10 @@ This fork of [rottexpr](https://github.com/LTCHIPS/rottexpr) adds OpenAL support
 
 ## Current limitations/bugs
 
-1. Only MIDI music playback is implemented.
-2. Sound playback may be rough around the edges.
-3. Windows support isn't tested.
-4. Sound reverb isn't implemented (affects Shroom Mode).
+1. Sound playback may be rough around the edges.
+2. Windows support isn't tested.
+3. Sound reverb isn't implemented (affects Shroom Mode).
 
 ## Building
 
-Build using CMake. libsndfile, SDL2 and OpenAL Soft development files must be installed.
+Build using CMake. ZMusic, SDL2 and OpenAL Soft development files must be installed. If you are building this project on Windows you may need to define `ZMUSIC_LIBRARIES` and `ZMUSIC_INCLUDE_DIR` to point to your local ZMusic build's built libraries and include directory respectively.
