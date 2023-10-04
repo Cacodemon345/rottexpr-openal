@@ -55,3 +55,4 @@ build/
 build
 build/*
 .vscode/
+*.rot
