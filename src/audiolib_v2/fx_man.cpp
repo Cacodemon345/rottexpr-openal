@@ -147,14 +147,16 @@ int FX_Shutdown( void )
 void
 FX_SetVolume(int volume)
 {
+    int i = 0;
     vol = volume;
-    alListenerf(AL_GAIN, (float)(vol) / 255.f);
+    for (i = 0; i < voicenum; i++)
+    {
+        alSourcef(source[i], AL_GAIN, (volume / 255.f));
+    }
 }
 
 int FX_GetVolume(void)
 {
-    float val = 1;
-    alGetListenerf(AL_GAIN, &val);
     return (int)(vol * 255);
 }
 int FX_VoiceAvailable(int priority)
