@@ -6,34 +6,39 @@
  * Written by Ryan C. Gordon. (icculus@clutteredmind.org)
  */
 
+/* Cacodemon345: Changed and rewritten for ZMusic. */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 
-#include <fluidsynth.h>
+#include <filesystem>
 
 #define AL_ALEXT_PROTOTYPES 1
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
 
+#include <zmusic.h>
+
 #define ROTT
 
 #define cdecl
 
-#include "SDL2/SDL.h"
-#include "SDL2/SDL_mixer.h"
+extern "C"
+{
 #ifdef ROTT
 #include "rt_def.h"      // ROTT music hack
 #include "rt_cfg.h"      // ROTT music hack
 #include "rt_util.h"     // ROTT music hack
 #endif
 #include "music.h"
+}
 
-#define __FX_TRUE  (1 == 1)
-#define __FX_FALSE (!__FX_TRUE)
+#define __FX_TRUE  true
+#define __FX_FALSE false
 
 #define DUKESND_DEBUG       "DUKESND_DEBUG"
 
@@ -52,18 +57,8 @@ static char errorMessage[80];
 static FILE *debug_file = NULL;
 static int initialized_debugging = 0;
 
-// FluidSynth stuff.
-static fluid_settings_t* settings;
-static fluid_synth_t* synth;
-static fluid_player_t* player;
-static fluid_audio_driver_t* audiodrv;
 static ALuint buffer, source;
-
-ALsizei AL_APIENTRY audio_buffer_callback(ALvoid *userptr, ALvoid *sampledata, ALsizei numbytes)
-{
-    fluid_synth_write_s16(synth, numbytes / 2, sampledata, 0, 2, sampledata, 1, 2);
-    return numbytes;
-}
+static ZMusic_MusicStream stream = nullptr;
 
 // This gets called all over the place for information and debugging messages.
 //  If the user set the DUKESND_DEBUG environment variable, the messages
@@ -128,7 +123,7 @@ static void setErrorMessage(const char *msg)
 
 // The music functions...
 
-char *MUSIC_ErrorString(int ErrorNumber)
+const char *MUSIC_ErrorString(int ErrorNumber)
 {
     switch (ErrorNumber)
     {
@@ -179,7 +174,6 @@ static int music_context = 0;
 static int music_loopflag = MUSIC_PlayOnce;
 static char *music_songdata = NULL;
 static int music_size = 0;
-static Mix_Music *music_musicchunk = NULL;
 
 int MUSIC_Init(int SoundCard, int Address)
 {
@@ -203,25 +197,30 @@ int MUSIC_Init(int SoundCard, int Address)
     alGenSources(1, &source);
     alGenBuffers(1, &buffer);
 
-    settings = new_fluid_settings();
-    if (!settings) return MUSIC_Error;
-
-    synth = new_fluid_synth(settings);
-
-    if (!synth) {
-        fprintf(stderr, "Failed to load synth\n");
-        delete_fluid_settings(settings);
-        return MUSIC_Error;
-    }
-
-    fluid_synth_reverb_on(synth, -1, reverbMusic);
-    fluid_synth_chorus_on(synth, -1, chorusMusic);
-
-    int res = fluid_synth_sfload(synth, "./soundfont.sf2", 1);
-    if (res == FLUID_FAILED)
+    auto array = ZMusic_GetConfiguration();
+    ZMusicConfigurationSetting settingempty = {};
+    while (memcmp(array, &settingempty, sizeof(ZMusicConfigurationSetting)))
     {
-        fprintf(stderr, "Failed to load soundfont\n");
+        switch(array->type)
+        {
+            case ZMUSIC_VAR_INT:
+            case ZMUSIC_VAR_BOOL:
+                ChangeMusicSettingInt((EIntConfigKey)array->identifier, nullptr, array->defaultVal, nullptr);
+                break;
+            case ZMUSIC_VAR_FLOAT:
+                ChangeMusicSettingFloat((EFloatConfigKey)array->identifier, nullptr, array->defaultVal, nullptr);
+                break;
+        }
+        array++;
     }
+
+    auto sfpath = std::filesystem::weakly_canonical("./soundfont.sf2").make_preferred();
+    ChangeMusicSettingString(EStringConfigKey::zmusic_fluid_patchset, nullptr, sfpath.c_str());
+    ChangeMusicSettingInt(EIntConfigKey::zmusic_snd_outputrate, nullptr, 44100, nullptr);
+    ChangeMusicSettingFloat(EFloatConfigKey::zmusic_fluid_gain, nullptr, 1, nullptr);
+    ChangeMusicSettingFloat(EFloatConfigKey::zmusic_snd_mastervolume, nullptr, 1, nullptr);
+    ChangeMusicSettingFloat(EFloatConfigKey::zmusic_snd_musicvolume, nullptr, 1, nullptr);
+    ChangeMusicSettingFloat(EFloatConfigKey::zmusic_relative_volume, nullptr, 1, nullptr);
 
     music_initialized = 1;
     return(MUSIC_Ok);
@@ -242,10 +241,6 @@ int MUSIC_Shutdown(void)
     music_context = 0;
     music_initialized = 0;
     music_loopflag = MUSIC_PlayOnce;
-    delete_fluid_synth(synth);
-    delete_fluid_settings(settings);
-    synth = NULL;
-    settings = NULL;
     alDeleteBuffers(1, &buffer);
     alDeleteSources(1, &source);
 
@@ -255,151 +250,231 @@ int MUSIC_Shutdown(void)
 
 void MUSIC_SetMaxFMMidiChannel(int channel)
 {
-    musdebug("STUB ... MUSIC_SetMaxFMMidiChannel(%d).\n", channel);
 } // MUSIC_SetMaxFMMidiChannel
 
+float realvol = 1.f;
 
 void MUSIC_SetVolume(int volume)
 {
-    fluid_synth_set_gain(synth, (float)volume / 255.f);
-    //Mix_VolumeMusic(volume >> 1);  // convert 0-255 to 0-128.
+    ChangeMusicSettingFloat(EFloatConfigKey::zmusic_snd_musicvolume, stream, (float)volume / 255.f, &realvol);
+    ZMusic_VolumeChanged(stream);
+    alSourcef(source, AL_GAIN, (float)volume / 255.f);
 } // MUSIC_SetVolume
 
 
 void MUSIC_SetMidiChannelVolume(int channel, int volume)
 {
-    musdebug("STUB ... MUSIC_SetMidiChannelVolume(%d, %d).\n", channel, volume);
 } // MUSIC_SetMidiChannelVolume
 
 
 void MUSIC_ResetMidiChannelVolumes(void)
 {
-    musdebug("STUB ... MUSIC_ResetMidiChannelVolumes().\n");
 } // MUSIC_ResetMidiChannelVolumes
 
 
 int MUSIC_GetVolume(void)
 {
-    return fluid_synth_get_gain(synth) * 255.f;
-    //return(Mix_VolumeMusic(-1) << 1);  // convert 0-128 to 0-255.
+    return realvol * 255;
 } // MUSIC_GetVolume
 
 
 void MUSIC_SetLoopFlag(int loopflag)
 {
     music_loopflag = loopflag;
+    
 } // MUSIC_SetLoopFlag
 
 
 int MUSIC_SongPlaying(void)
 {
-    return((fluid_player_get_status(player) == FLUID_PLAYER_PLAYING) ? __FX_TRUE : __FX_FALSE);
+    return ZMusic_IsPlaying(stream);
 } // MUSIC_SongPlaying
 
 
 void MUSIC_Continue(void)
 {
-#if 1
-    if (player && (fluid_player_get_status(player) == FLUID_PLAYER_DONE || fluid_player_get_status(player) == FLUID_PLAYER_READY))
-        fluid_player_play(player);
+    if (stream && ZMusic_IsPlaying(stream))
+        ZMusic_Resume(stream);
     else if (music_songdata)
         MUSIC_PlaySong(music_songdata, MUSIC_PlayOnce);
-#endif
+
+    alSourcef(source, AL_GAIN, realvol);
 } // MUSIC_Continue
 
 
 void MUSIC_Pause(void)
 {
-    fluid_player_stop(player);
+    ZMusic_Pause(stream);
+    alSourcef(source, AL_GAIN, 0);
 } // MUSIC_Pause
 
 
 int MUSIC_StopSong(void)
 {
-#if 0
-    //if (!fx_initialized)
-    if (!Mix_QuerySpec(NULL, NULL, NULL))
+    if (stream)
     {
-        setErrorMessage("Need FX system initialized, too. Sorry.");
-        return(MUSIC_Error);
-    } // if
-
-    if ( (Mix_PlayingMusic()) || (Mix_PausedMusic()) )
-        Mix_HaltMusic();
-
-    if (music_musicchunk)
-        Mix_FreeMusic(music_musicchunk);
-
-    music_songdata = NULL;
-    music_musicchunk = NULL;
-#endif
-    if (player)
-    {
-        fluid_player_stop(player);
-        fluid_player_seek(player, 0);
-
-        // Detach and stop everything before deleting it.
+        ZMusic_Resume(stream);
         alSourceStop(source);
         alSourcei(source, AL_BUFFER, 0);
-        delete_fluid_audio_driver(audiodrv);
-        delete_fluid_player(player);
-        fluid_synth_system_reset(synth);
-        player = NULL;
+        alSourcef(source, AL_GAIN, 0);
+        ZMusic_Stop(stream);
+        ZMusic_Close(stream);
+        stream = nullptr;
+        music_songdata = NULL;
+        music_size = 0;
     }
     return(MUSIC_Ok);
 } // MUSIC_StopSong
 
+typedef struct memory_file
+{
+ 	ptrdiff_t FilePos;
+
+    int len;
+    char* mem;
+} memory_file;
+
+static long get_tell(ZMusicCustomReader* zr)
+{
+    return ((memory_file*)zr->handle)->FilePos;
+}
+
+static long read_data(ZMusicCustomReader* zr, void *ptr, int32_t len)
+{
+    memory_file* file = ((memory_file*)zr->handle);
+
+	if (len>file->len - file->FilePos) len = file->len - file->FilePos;
+	if (len<0) len = 0;
+	memcpy(ptr, file->mem + file->FilePos, len);
+	file->FilePos += len;
+	return len;
+}
+
+static long seek_data(ZMusicCustomReader* zr, long offset, int origin)
+{
+    memory_file* file = ((memory_file*)zr->handle);
+
+	switch (origin)
+	{
+	case SEEK_CUR:
+		offset += file->FilePos;
+		break;
+
+	case SEEK_END:
+		offset += file->len;
+		break;
+
+	}
+	if (offset < 0 || offset > file->len) return -1;
+    if (offset < 0)
+        offset = 0;
+    if (offset > file->len)
+        offset = file->len;
+	file->FilePos = offset;
+
+	return 0;
+}
+
+static char* gets_data(ZMusicCustomReader* zr, char* strbuf, int len)
+{
+    memory_file* file = ((memory_file*)zr->handle);
+	if (len>file->len - file->FilePos) len = file->len - file->FilePos;
+	if (len <= 0) return nullptr;
+
+	char *p = strbuf;
+	while (len > 1)
+	{
+		if (file->mem[file->FilePos] == 0)
+		{
+			file->FilePos++;
+			break;
+		}
+		if (file->mem[file->FilePos] != '\r')
+		{
+			*p++ = file->mem[file->FilePos];
+			len--;
+			if (file->mem[file->FilePos] == '\n')
+			{
+				file->FilePos++;
+				break;
+			}
+		}
+		file->FilePos++;
+	}
+	if (p == strbuf) return nullptr;
+	*p++ = 0;
+	return strbuf;
+}
+
+void close_data(ZMusicCustomReader* zr)
+{
+    delete reinterpret_cast<memory_file*>(zr->handle);
+    delete zr;
+}
 
 int MUSIC_PlaySong(char *song, int loopflag)
 {
-    double samplerate = 44100;
-    //SDL_RWops *rw;
+    SoundStreamInfoEx info;
+    
+    auto callback = [](ALvoid *userptr, ALvoid *sampledata, ALsizei numbytes) -> int
+            {
+                ZMusic_MusicStream musStream = stream;
+
+                ZMusic_Update(musStream);
+                if (!ZMusic_IsPlaying(musStream))
+                    return 0;
+                ZMusic_FillStream(musStream, sampledata, numbytes);
+                return numbytes;
+            };
 
     MUSIC_StopSong();
 
     music_songdata = song;
     music_loopflag = loopflag;
 
-    player = new_fluid_player(synth);
-    audiodrv = new_fluid_audio_driver(settings, synth);
+    auto zcr = new ZMusicCustomReader;
+    zcr->handle = new memory_file{0, music_size, (char*)song};
+    zcr->gets = gets_data;
+    zcr->close = close_data;
+    zcr->read = read_data;
+    zcr->tell = get_tell;
+    zcr->seek = seek_data;
 
-    fluid_player_set_loop(player, (loopflag == MUSIC_PlayOnce) ? 0 : -1);
-    fluid_player_add_mem(player, song, music_size);
-    fluid_settings_getnum(fluid_synth_get_settings(synth), "synth.sample-rate", &samplerate);
-    //alSourcei(source, AL_BUFFER, buffer);
-    //alBufferCallbackSOFT(buffer, AL_FORMAT_STEREO16, samplerate, audio_buffer_callback, NULL);
-    //alSourcePlay(source);
-    fluid_player_play(player);
+    //player = new_fluid_player(synth);
+    //audiodrv = new_fluid_audio_driver(settings, synth);
+    if ((stream = ZMusic_OpenSong(zcr, EMidiDevice::MDEV_FLUIDSYNTH, "")) == nullptr) {
+        printf("Failed to open music!\n");
+        return MUSIC_Error;
+    }
+
+    ZMusic_Start(stream, 0, music_loopflag != MUSIC_PlayOnce);
+    ZMusic_GetStreamInfoEx(stream, &info);
+    switch (info.mSampleType)
+    {
+        case SampleType_Float32:
+            alBufferCallbackSOFT(buffer, info.mChannelConfig == ChannelConfig_Stereo ? AL_FORMAT_STEREO_FLOAT32 : AL_FORMAT_MONO_FLOAT32, info.mSampleRate, callback, stream);
+            break;
+        case SampleType_Int16:
+            alBufferCallbackSOFT(buffer, info.mChannelConfig == ChannelConfig_Stereo ? AL_FORMAT_STEREO16 : AL_FORMAT_MONO16, info.mSampleRate, callback, stream);
+            break;
+        case SampleType_UInt8:
+            alBufferCallbackSOFT(buffer, info.mChannelConfig == ChannelConfig_Stereo ? AL_FORMAT_STEREO8 : AL_FORMAT_MONO8, info.mSampleRate, callback, stream);
+            break;
+    }
+
+    alSourcef(source, AL_GAIN, realvol);
+    alSourcei(source, AL_BUFFER, buffer);
+    alSourcePlay(source);
 
     return(MUSIC_Ok);
 } // MUSIC_PlaySong
-
-
-extern char ApogeePath[256];
 
 #ifdef ROTT
 // ROTT Special - SBF
 int MUSIC_PlaySongROTT(char *song, int size, int loopflag)
 {
-    double samplerate = 44100;
-    MUSIC_StopSong();
-
-    player = new_fluid_player(synth);
-    audiodrv = new_fluid_audio_driver(settings, synth);
-
-    music_songdata = song;
     music_size = size;
-    music_loopflag = loopflag;
-
-    fluid_player_set_loop(player, (loopflag == MUSIC_PlayOnce) ? 0 : -1);
-    fluid_player_add_mem(player, song, music_size);
-    fluid_settings_getnum(fluid_synth_get_settings(synth), "synth.sample-rate", &samplerate);
-    //alSourcei(source, AL_BUFFER, buffer);
-    //alBufferCallbackSOFT(buffer, AL_FORMAT_STEREO16, samplerate, audio_buffer_callback, NULL);
-    fluid_player_play(player);
-    //alSourcePlay(source);
-
-    return(MUSIC_Ok);
+    return MUSIC_PlaySong(song, loopflag);
 } // MUSIC_PlaySongROTT
 #endif
 
@@ -450,7 +525,7 @@ void MUSIC_GetSongLength(songposition *pos)
 int MUSIC_FadeVolume(int tovolume, int milliseconds)
 {
     //Mix_FadeOutMusic(milliseconds);
-    fluid_player_stop(player);
+    MUSIC_StopSong();
     return(MUSIC_Ok);
 } // MUSIC_FadeVolume
 
@@ -481,8 +556,8 @@ void MUSIC_RegisterTimbreBank(unsigned char *timbres)
 
 void MUSIC_UpdateReverbChorus( void )
 {
-    fluid_synth_reverb_on(synth, -1, reverbMusic);
-    fluid_synth_chorus_on(synth, -1, chorusMusic);
+    ChangeMusicSettingInt(EIntConfigKey::zmusic_fluid_reverb, stream, reverbMusic, nullptr);
+    ChangeMusicSettingInt(EIntConfigKey::zmusic_fluid_chorus, stream, chorusMusic, nullptr);
 }
 
 // end of fx_man.c ...

@@ -260,25 +260,6 @@ int main (int argc, char *argv[])
     {
         int status2 = 0;
 
-        if ( !NoSound && !IS8250 )
-        {
-            if (!quiet)
-                printf( "MU_Startup: " );
-            MU_Startup(false);
-            if (!quiet)
-                printf( "%s\n", MUSIC_ErrorString( MUSIC_Error ) );
-        }
-        else if ( IS8250 )
-        {
-            printf( "==============================================================================\n");
-            printf( "WARNING: 8250 detected.\n" );
-            printf( "Music has been disabled.  This is necessary to maintain high interrupt\n" );
-            printf( "rates with the 8250 UART which will improve overall game performance.\n");
-            printf( "                      < Press any key to continue >\n");
-            printf( "==============================================================================\n");
-            getch();
-        }
-
         if (!NoSound)
         {
             int nv, nb, nc;
@@ -302,6 +283,15 @@ int main (int argc, char *argv[])
         {
             if (!quiet)
                 printf( "Sound FX disabled.\n" );
+        }
+
+        if ( !NoSound )
+        {
+            if (!quiet)
+                printf( "MU_Startup: " );
+            MU_Startup(false);
+            if (!quiet)
+                printf( "%s\n", MUSIC_ErrorString( MUSIC_Error ) );
         }
 
         Init_Tables ();

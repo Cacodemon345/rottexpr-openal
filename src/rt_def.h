@@ -284,10 +284,15 @@ typedef int fixed;
 
 /* boolean is serialized at the moment, and watcomc made it a byte. */
 
+#ifdef __cplusplus
+typedef bool boolean;
+static_assert(sizeof(boolean) == 1);
+#else
 typedef unsigned char boolean;
 enum {
     false, true
 };
+#endif
 
 typedef enum {
     east,

@@ -1,5 +1,7 @@
+extern "C"
+{
 #include "fx_man.h"
-
+}
 #define AL_ALEXT_PROTOTYPES 1
 #include <AL/al.h>
 #include <AL/alc.h>
@@ -9,6 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <zmusic.h>
+
+#include <vector>
 
 static int revstereo = 0;
 static ALCdevice* Device;
@@ -198,6 +203,7 @@ int FX_StopSound( int handle )
             callbackvals[i] = -1;
         }
     }
+    return FX_Ok;
 }
 
 int FX_StopAllSounds( void )
@@ -207,6 +213,7 @@ int FX_StopAllSounds( void )
     {
         alSourceStop(source[i]);
     }
+    return FX_Ok;
 }
 
 int FX_StartDemandFeedPlayback( void ( *function )( char **ptr, unsigned long *length ),
@@ -258,17 +265,17 @@ int FX_SetupCard(int SoundCard, fx_device* device)
 
 void  FX_SetReverb( int reverb ) {}
 void  FX_SetFastReverb( int reverb ) {}
-int   FX_GetMaxReverbDelay( void ) {}
-int   FX_GetReverbDelay( void ) {}
+int   FX_GetMaxReverbDelay( void ) { return 0; }
+int   FX_GetReverbDelay( void ) { return FX_Ok; }
 void  FX_SetReverbDelay( int delay ) {}
 
-char *FX_ErrorString
+const char *FX_ErrorString
    (
    int ErrorNumber
    )
 
    {
-   char *ErrorString;
+   const char *ErrorString;
 
    switch( ErrorNumber )
       {
@@ -445,75 +452,11 @@ static int FindVoice(void)
     return -1;
 }
 
-typedef struct memory_file
-{
- 	ptrdiff_t FilePos;
-
-    sf_count_t len;
-    char* mem;
-} memory_file;
-
-sf_count_t get_len(void* user_data)
-{
-    return ((memory_file*)user_data)->len;
-}
-
-sf_count_t get_tell(void* user_data)
-{
-    return ((memory_file*)user_data)->FilePos;
-}
-
-sf_count_t write_data(const void *ptr, sf_count_t count, void* user_data)
-{
-    memory_file* file = ((memory_file*)user_data);
-
-    return -1;
-}
-
-sf_count_t read_data(void *ptr, sf_count_t len, void* user_data)
-{
-    memory_file* file = ((memory_file*)user_data);
-
-	if (len>file->len - file->FilePos) len = file->len - file->FilePos;
-	if (len<0) len = 0;
-	memcpy(ptr, file->mem + file->FilePos, len);
-	file->FilePos += len;
-	return len;
-}
-
-sf_count_t seek_data(sf_count_t offset, int origin, void* user_data)
-{
-    memory_file* file = ((memory_file*)user_data);
-
-	switch (origin)
-	{
-	case SEEK_CUR:
-		offset += file->FilePos;
-		break;
-
-	case SEEK_END:
-		offset += file->len;
-		break;
-
-	}
-	if (offset < 0 || offset > file->len) return -1;
-    if (offset < 0)
-        offset = 0;
-    if (offset > file->len)
-        offset = file->len;
-	file->FilePos = offset;
-
-	return 0;
-}
-
 int FX_PlayVOC3D( char *ptr, int pitchoffset, int angle, int distance,
        int priority, unsigned long callbackval, int len )
 {
     int sourceNum;
-    SF_VIRTUAL_IO io;
-    SF_INFO info;
-    memory_file file;
-    SNDFILE* sndfile = NULL;
+    struct SoundDecoder* decoder = NULL;
     short* framedata = NULL;
     if ( distance < 0 )
     {
@@ -521,52 +464,69 @@ int FX_PlayVOC3D( char *ptr, int pitchoffset, int angle, int distance,
         angle    += 16;
     }
 
-    file.len = len;
-    file.FilePos = 0;
-    file.mem = ptr;
-
-    io.get_filelen = get_len;
-    io.tell = get_tell;
-    io.read = read_data;
-    io.write = write_data;
-    io.seek = seek_data;
-
-    memset((void*)&info, 0, sizeof(SF_INFO));
-    info.format = 0;
-
     sourceNum = FindVoice();
     if (sourceNum == -1) {
         fprintf(stderr, "Failed to find a free voice.\n");
         return -1;
     }
-    
-    sndfile = sf_open_virtual(&io, SFM_READ, &info, (void*)&file);
-    if (!sndfile) {
-        fprintf(stderr, "Failed to read sndfile.\n");
-        return -1;
+
+    decoder = CreateDecoder((uint8_t*)ptr, len, true);
+    if (decoder)
+    {
+        ALenum format = AL_NONE;
+        ChannelConfig chans;
+        SampleType type;
+        int srate;
+        int samplesize = 1;
+        unsigned total = 0;
+	    unsigned got = 0;
+
+        SoundDecoder_GetInfo(decoder, &srate, &chans, &type);
+        if (chans == ChannelConfig_Mono)
+        {
+            if (type == SampleType_UInt8) format = AL_FORMAT_MONO8, samplesize = 1;
+            if (type == SampleType_Int16) format = AL_FORMAT_MONO16, samplesize = 2;
+        }
+        else if (chans == ChannelConfig_Stereo)
+        {
+            if (type == SampleType_UInt8) format = AL_FORMAT_STEREO8, samplesize = 2;
+            if (type == SampleType_Int16) format = AL_FORMAT_STEREO16, samplesize = 4;
+        }
+        if (format == AL_NONE)
+        {
+            SoundDecoder_Close(decoder);
+            return FX_Error;
+        }
+        std::vector<uint8_t> output;
+
+        output.resize(total+32768);
+        while((got=(unsigned)SoundDecoder_Read(decoder, (char*)&output[total], output.size()-total)) > 0)
+        {
+            total += got;
+            output.resize(total*2);
+        }
+        output.resize(total);
+        if (total == 0)
+            return FX_Error;
+	    SoundDecoder_Close(decoder);
+
+        alSourcei(source[sourceNum], AL_BUFFER, 0);
+        alBufferData(Buffers[sourceNum], format, output.data(), output.size(), srate);
+        (void)samplesize;
+        angle &= 31;
+
+        alSource3f(source[sourceNum], AL_POSITION, cos(0.5235987755982988 * angle) * distance, sin(0.5235987755982988 * angle) * distance, 0);
+        alSource3f(source[sourceNum], AL_VELOCITY, 0, 0, 0);
+        alSource3f(source[sourceNum], AL_DIRECTION, 0, 0, 0);
+        alSourcef(source[sourceNum], AL_SOURCE_RELATIVE, AL_TRUE);
+        alSourcei(source[sourceNum], AL_BUFFER, Buffers[sourceNum]);
+        alSourcedSOFT(source[sourceNum], AL_PITCH, FixedToFloat(PITCH_GetScale(pitchoffset)));
+        
+        callbackvals[sourceNum] = callbackval;
+        alSourcePlay(source[sourceNum]);
+        return source[sourceNum];
     }
-    
-    framedata = calloc(sizeof(short), info.frames * info.channels);
-    sf_readf_short(sndfile, framedata, info.frames);
-
-    alSourcei(source[sourceNum], AL_BUFFER, 0);
-    alBufferData(Buffers[sourceNum], AL_FORMAT_MONO16 + (info.channels == 2 ? 2 : 0), framedata, info.frames * info.channels * sizeof(short), info.samplerate);
-    free(framedata);
-    sf_close(sndfile);
-
-    angle &= 31;
-
-    alSource3f(source[sourceNum], AL_POSITION, cos(0.5235987755982988 * angle) * distance, sin(0.5235987755982988 * angle) * distance, 0);
-    alSource3f(source[sourceNum], AL_VELOCITY, 0, 0, 0);
-    alSource3f(source[sourceNum], AL_DIRECTION, 0, 0, 0);
-    alSourcef(source[sourceNum], AL_SOURCE_RELATIVE, AL_TRUE);
-    alSourcei(source[sourceNum], AL_BUFFER, Buffers[sourceNum]);
-    alSourcedSOFT(source[sourceNum], AL_PITCH, FixedToFloat(PITCH_GetScale(pitchoffset)));
-    
-    callbackvals[sourceNum] = callbackval;
-    alSourcePlay(source[sourceNum]);
-    
-    return source[sourceNum];
+    return FX_Error;
 }
 
 int FX_PlayWAV3D( char *ptr, int pitchoffset, int angle, int distance,
