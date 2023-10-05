@@ -602,7 +602,7 @@ void DrawRow(int count, byte * dest, byte * src)
 
     while (count--) {
         /* extract the x/y coordinates */
-        coord =  ((yfrac >> 24) & 0b00000001111111) | (( xfrac >> 17) & 0b11111110000000);
+        coord =  ((yfrac >> 24) & 0x7f) | (( xfrac >> 17) & 0x3f80);
 
         *dest++ = shadingtable[src[coord]];
 
