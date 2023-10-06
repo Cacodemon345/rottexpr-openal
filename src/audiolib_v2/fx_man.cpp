@@ -499,6 +499,7 @@ int FX_PlayVOC3D( char *ptr, int pitchoffset, int angle, int distance,
             SoundDecoder_Close(decoder);
             return FX_Error;
         }
+#if 0
         std::vector<uint8_t> output;
 
         output.resize(total+32768);
@@ -510,10 +511,18 @@ int FX_PlayVOC3D( char *ptr, int pitchoffset, int angle, int distance,
         output.resize(total);
         if (total == 0)
             return FX_Error;
-	    SoundDecoder_Close(decoder);
+#endif
 
         alSourcei(source[sourceNum], AL_BUFFER, 0);
-        alBufferData(Buffers[sourceNum], format, output.data(), output.size(), srate);
+        //alBufferData(Buffers[sourceNum], format, output.data(), output.size(), srate);
+        alBufferCallbackSOFT(Buffers[sourceNum], format, srate, [](ALvoid *userptr, ALvoid *sampledata, ALsizei numbytes) -> int
+        {
+            SoundDecoder* decoder = (SoundDecoder*)userptr;
+            auto size = SoundDecoder_Read(decoder, sampledata, numbytes);
+            if (size < numbytes)
+                SoundDecoder_Close(decoder);
+            return (int)size;
+        }, decoder);
         (void)samplesize;
         angle &= 31;
 
