@@ -9,9 +9,8 @@ This fork of [rottexpr](https://github.com/LTCHIPS/rottexpr) adds OpenAL support
 
 ## Current limitations/bugs
 
-1. Sound playback may be rough around the edges.
-2. Windows support isn't tested.
-3. Sound reverb isn't implemented (affects Shroom Mode).
+1. Windows support isn't tested.
+2. Sound reverb is implemented exactly like in Build engine source port Raze, complete with all its limitations.
 
 ## Building
 
