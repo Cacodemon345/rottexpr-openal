@@ -6,11 +6,11 @@ This fork of [rottexpr](https://github.com/LTCHIPS/rottexpr) adds OpenAL support
 
 1. All the original features of rottexpr.
 2. Ability to play back ogg/flac sound files via libsndfile.
+3. Improved reverb.
 
 ## Current limitations/bugs
 
 1. Windows support isn't tested.
-2. Sound reverb is implemented exactly like in Build engine source port Raze, complete with all its limitations.
 
 ## Building
 
