@@ -6,6 +6,8 @@ extern "C"
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
+#include <AL/efx.h>
+#include <AL/efx-presets.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +20,7 @@ extern "C"
 static int revstereo = 0;
 static ALCdevice* Device;
 static ALCcontext* Context;
+static ALuint globalSlot = 0, globalEffect = 0;
 
 static void ( *fx_callback )( unsigned long ) = NULL;
 bool OpenALInited = false;
@@ -82,17 +85,99 @@ void AL_APIENTRY OALCallback(ALenum eventType, ALuint object, ALuint param, ALsi
     }
 }
 
+/* LoadEffect loads the given reverb properties into a new OpenAL effect
+ * object, and returns the new effect ID. */
+static ALuint LoadEffect(const EFXEAXREVERBPROPERTIES *reverb)
+{
+    ALuint effect = 0;
+    ALenum err;
+
+    /* Create the effect object and check if we can do EAX reverb. */
+    alGenEffects(1, &effect);
+    if(alGetEnumValue("AL_EFFECT_EAXREVERB") != 0)
+    {
+        printf("Using EAX Reverb\n");
+
+        /* EAX Reverb is available. Set the EAX effect type then load the
+         * reverb properties. */
+        alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_EAXREVERB);
+
+        alEffectf(effect, AL_EAXREVERB_DENSITY, reverb->flDensity);
+        alEffectf(effect, AL_EAXREVERB_DIFFUSION, reverb->flDiffusion);
+        alEffectf(effect, AL_EAXREVERB_GAIN, reverb->flGain);
+        alEffectf(effect, AL_EAXREVERB_GAINHF, reverb->flGainHF);
+        alEffectf(effect, AL_EAXREVERB_GAINLF, reverb->flGainLF);
+        alEffectf(effect, AL_EAXREVERB_DECAY_TIME, reverb->flDecayTime);
+        alEffectf(effect, AL_EAXREVERB_DECAY_HFRATIO, reverb->flDecayHFRatio);
+        alEffectf(effect, AL_EAXREVERB_DECAY_LFRATIO, reverb->flDecayLFRatio);
+        alEffectf(effect, AL_EAXREVERB_REFLECTIONS_GAIN, reverb->flReflectionsGain);
+        alEffectf(effect, AL_EAXREVERB_REFLECTIONS_DELAY, reverb->flReflectionsDelay);
+        alEffectfv(effect, AL_EAXREVERB_REFLECTIONS_PAN, reverb->flReflectionsPan);
+        alEffectf(effect, AL_EAXREVERB_LATE_REVERB_GAIN, reverb->flLateReverbGain);
+        alEffectf(effect, AL_EAXREVERB_LATE_REVERB_DELAY, reverb->flLateReverbDelay);
+        alEffectfv(effect, AL_EAXREVERB_LATE_REVERB_PAN, reverb->flLateReverbPan);
+        alEffectf(effect, AL_EAXREVERB_ECHO_TIME, reverb->flEchoTime);
+        alEffectf(effect, AL_EAXREVERB_ECHO_DEPTH, reverb->flEchoDepth);
+        alEffectf(effect, AL_EAXREVERB_MODULATION_TIME, reverb->flModulationTime);
+        alEffectf(effect, AL_EAXREVERB_MODULATION_DEPTH, reverb->flModulationDepth);
+        alEffectf(effect, AL_EAXREVERB_AIR_ABSORPTION_GAINHF, reverb->flAirAbsorptionGainHF);
+        alEffectf(effect, AL_EAXREVERB_HFREFERENCE, reverb->flHFReference);
+        alEffectf(effect, AL_EAXREVERB_LFREFERENCE, reverb->flLFReference);
+        alEffectf(effect, AL_EAXREVERB_ROOM_ROLLOFF_FACTOR, reverb->flRoomRolloffFactor);
+        alEffecti(effect, AL_EAXREVERB_DECAY_HFLIMIT, reverb->iDecayHFLimit);
+    }
+    else
+    {
+        printf("Using Standard Reverb\n");
+
+        /* No EAX Reverb. Set the standard reverb effect type then load the
+         * available reverb properties. */
+        alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_REVERB);
+
+        alEffectf(effect, AL_REVERB_DENSITY, reverb->flDensity);
+        alEffectf(effect, AL_REVERB_DIFFUSION, reverb->flDiffusion);
+        alEffectf(effect, AL_REVERB_GAIN, reverb->flGain);
+        alEffectf(effect, AL_REVERB_GAINHF, reverb->flGainHF);
+        alEffectf(effect, AL_REVERB_DECAY_TIME, reverb->flDecayTime);
+        alEffectf(effect, AL_REVERB_DECAY_HFRATIO, reverb->flDecayHFRatio);
+        alEffectf(effect, AL_REVERB_REFLECTIONS_GAIN, reverb->flReflectionsGain);
+        alEffectf(effect, AL_REVERB_REFLECTIONS_DELAY, reverb->flReflectionsDelay);
+        alEffectf(effect, AL_REVERB_LATE_REVERB_GAIN, reverb->flLateReverbGain);
+        alEffectf(effect, AL_REVERB_LATE_REVERB_DELAY, reverb->flLateReverbDelay);
+        alEffectf(effect, AL_REVERB_AIR_ABSORPTION_GAINHF, reverb->flAirAbsorptionGainHF);
+        alEffectf(effect, AL_REVERB_ROOM_ROLLOFF_FACTOR, reverb->flRoomRolloffFactor);
+        alEffecti(effect, AL_REVERB_DECAY_HFLIMIT, reverb->iDecayHFLimit);
+    }
+
+    /* Check if an error occurred, and clean up if so. */
+    err = alGetError();
+    if(err != AL_NO_ERROR)
+    {
+        fprintf(stderr, "OpenAL error: %s\n", alGetString(err));
+        if(alIsEffect(effect))
+            alDeleteEffects(1, &effect);
+        return 0;
+    }
+
+    return effect;
+}
+
 int
 FX_Init( int SoundCard, int numvoices, int numchannels, int samplebits, unsigned mixrate )
 {
     int i = 0;
     ALenum event = AL_EVENT_TYPE_SOURCE_STATE_CHANGED_SOFT;
+    EFXEAXREVERBPROPERTIES prop = EFX_REVERB_PRESET_PSYCHOTIC;
 
 	Device = alcOpenDevice(NULL); // select the "preferred device" 
 	if (Device)
 	{
 		Context = alcCreateContext(Device, NULL);
 		alcMakeContextCurrent(Context);
+    }
+    else
+    {
+        return FX_Error;
     }
 	ALenum error = alGetError(); // clear error code 
     Buffers = (ALuint*)malloc(sizeof(ALuint) * numvoices);
@@ -121,14 +206,19 @@ FX_Init( int SoundCard, int numvoices, int numchannels, int samplebits, unsigned
         alSourcef(source[i], AL_MAX_DISTANCE, 255);
     }
     alDistanceModel(AL_LINEAR_DISTANCE);
+    globalEffect = LoadEffect(&prop);
+    alGenAuxiliaryEffectSlots(1, &globalSlot);
 
 	return FX_Ok;
 }
 
-
 int FX_Shutdown( void )
 {
     int i = 0;
+    FX_SetReverb(0);
+    alDeleteAuxiliaryEffectSlots(1, &globalSlot);
+    alDeleteEffects(1, &globalEffect);
+    globalEffect = globalSlot = 0;
     alEventCallbackSOFT(NULL, NULL);
 	for (i = 0; i < voicenum; i++)
 	{
@@ -265,7 +355,20 @@ int FX_SetupCard(int SoundCard, fx_device* device)
     return FX_Ok;
 }
 
-void  FX_SetReverb( int reverb ) {}
+void  FX_SetReverb( int reverb )
+{
+    if (reverb > 220)
+    {
+        alAuxiliaryEffectSloti(globalSlot, AL_EFFECTSLOT_EFFECT, (ALint)globalEffect);
+        for (int i = 0; i < voicenum; i++)
+            alSource3i(source[i], AL_AUXILIARY_SEND_FILTER, (ALint)globalSlot, 0, AL_FILTER_NULL);
+    }
+    else
+    {
+        for (int i = 0; i < voicenum; i++)
+            alSource3i(source[i], AL_AUXILIARY_SEND_FILTER, AL_EFFECTSLOT_NULL, 0, AL_FILTER_NULL);
+    }
+}
 void  FX_SetFastReverb( int reverb ) {}
 int   FX_GetMaxReverbDelay( void ) { return 0; }
 int   FX_GetReverbDelay( void ) { return FX_Ok; }
