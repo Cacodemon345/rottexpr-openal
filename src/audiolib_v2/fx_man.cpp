@@ -20,7 +20,7 @@ extern "C"
 static int revstereo = 0;
 static ALCdevice* Device;
 static ALCcontext* Context;
-static ALuint globalSlot = 0, globalEffect = 0;
+static ALuint globalSlot = 0, globalEffects[4] = { 0, 0, 0, 0};
 
 static void ( *fx_callback )( unsigned long ) = NULL;
 bool OpenALInited = false;
@@ -162,12 +162,21 @@ static ALuint LoadEffect(const EFXEAXREVERBPROPERTIES *reverb)
     return effect;
 }
 
+#define EFX_REVERB_PRESET_SEWERPIPE3 \
+    { 0.3071f, 0.8000f, 0.3162f, 0.3162f, 1.0000f, 1.5400f, 0.1400f, 1.0000f, 1.2589f, 0.0140f, { 0.0000f, 0.0000f, 0.0000f }, 3.2471f, 0.0210f, { 0.0000f, 0.0000f, 0.0000f }, 0.2500f, 0.0000f, 0.2500f, 0.0000f, 0.9943f, 5000.0000f, 250.0000f, 0.0000f, 0x1 }
+
+#define EFX_REVERB_PRESET_SEWERPIPE2 \
+    { 0.3071f, 0.8000f, 0.3162f, 0.3162f, 1.0000f, 1.8100f, 0.1400f, 1.0000f, 1.3017f, 0.0140f, { 0.0000f, 0.0000f, 0.0000f }, 3.2471f, 0.0210f, { 0.0000f, 0.0000f, 0.0000f }, 0.2500f, 0.0000f, 0.2500f, 0.0000f, 0.9943f, 5000.0000f, 250.0000f, 0.0000f, 0x1 }
+
 int
 FX_Init( int SoundCard, int numvoices, int numchannels, int samplebits, unsigned mixrate )
 {
     int i = 0;
     ALenum event = AL_EVENT_TYPE_SOURCE_STATE_CHANGED_SOFT;
     EFXEAXREVERBPROPERTIES prop = EFX_REVERB_PRESET_PSYCHOTIC;
+    EFXEAXREVERBPROPERTIES prop1 = EFX_REVERB_PRESET_PARKINGLOT;
+    EFXEAXREVERBPROPERTIES prop2 = EFX_REVERB_PRESET_SEWERPIPE2;
+    EFXEAXREVERBPROPERTIES prop3 = EFX_REVERB_PRESET_SEWERPIPE3;
 
 	Device = alcOpenDevice(NULL); // select the "preferred device" 
 	if (Device)
@@ -206,7 +215,10 @@ FX_Init( int SoundCard, int numvoices, int numchannels, int samplebits, unsigned
         alSourcef(source[i], AL_MAX_DISTANCE, 255);
     }
     alDistanceModel(AL_LINEAR_DISTANCE);
-    globalEffect = LoadEffect(&prop);
+    globalEffects[0] = LoadEffect(&prop);
+    globalEffects[1] = LoadEffect(&prop1);
+    globalEffects[2] = LoadEffect(&prop2);
+    globalEffects[3] = LoadEffect(&prop3);
     alGenAuxiliaryEffectSlots(1, &globalSlot);
 
 	return FX_Ok;
@@ -217,8 +229,8 @@ int FX_Shutdown( void )
     int i = 0;
     FX_SetReverb(0);
     alDeleteAuxiliaryEffectSlots(1, &globalSlot);
-    alDeleteEffects(1, &globalEffect);
-    globalEffect = globalSlot = 0;
+    alDeleteEffects(4, globalEffects);
+    globalSlot = 0;
     alEventCallbackSOFT(NULL, NULL);
 	for (i = 0; i < voicenum; i++)
 	{
@@ -357,9 +369,18 @@ int FX_SetupCard(int SoundCard, fx_device* device)
 
 void  FX_SetReverb( int reverb )
 {
-    if (reverb > 220)
+    ALint effect = AL_EFFECT_NULL;
+    if (reverb >= 220)
+        effect = globalEffects[0];
+    else if (reverb >= 180)
+        effect = globalEffects[2];
+    else if (reverb >= 64)
+        effect = globalEffects[3];
+    else if (reverb != 0)
+        effect = globalEffects[1];
+    if (reverb != 0)
     {
-        alAuxiliaryEffectSloti(globalSlot, AL_EFFECTSLOT_EFFECT, (ALint)globalEffect);
+        alAuxiliaryEffectSloti(globalSlot, AL_EFFECTSLOT_EFFECT, effect);
         for (int i = 0; i < voicenum; i++)
             alSource3i(source[i], AL_AUXILIARY_SEND_FILTER, (ALint)globalSlot, 0, AL_FILTER_NULL);
     }
