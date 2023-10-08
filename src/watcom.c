@@ -43,5 +43,6 @@ fixed FixedScale(fixed orig, fixed factor, fixed divisor)
     return (w) & 0xffffffff;
 */
     //changed to this because arithmetic errors occurred with resolutions > 800x600
-    return (float)orig * factor / divisor;
+    // [Cacodemon345] Changed to double because 32-bit floats are too small.
+    return (double)orig * factor / divisor;
 }
