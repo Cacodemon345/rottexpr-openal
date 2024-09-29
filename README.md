@@ -10,7 +10,7 @@ This fork of [rottexpr](https://github.com/LTCHIPS/rottexpr) adds OpenAL support
 
 ## Current limitations/bugs
 
-1. Windows support isn't tested.
+1. Windows support isn't working well.
 
 ## Building
 
